@@ -1,13 +1,14 @@
 from cognigy_client import Cognigy_client 
 
-base_url = "http://api.cognigy.com:3100"
+base_url = "http://api.cognigy.com"
 api_key = "testapikey"
 flow = "starwars"
 reset_state = True
 reset_context = True
-username = "test-username"
+username = "python-test-username"
 channel = "python-test"
 
-test = Cognigy_client(base_url, username, api_key, channel, flow)
+test = Cognigy_client(base_url, 3100, username, api_key, channel, flow)
 test.connect()
-test.send_message('test', None)
+print 'Connected'
+test.send_message('Hi', None)

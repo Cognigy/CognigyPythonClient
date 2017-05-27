@@ -1,4 +1,4 @@
-from cognigy_client import Cognigy_client 
+from src.cognigy_client import Cognigy_client 
 
 base_url = "http://api.cognigy.com"
 api_key = "testapikey"

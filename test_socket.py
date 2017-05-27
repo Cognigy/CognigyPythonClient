@@ -7,8 +7,13 @@ reset_state = True
 reset_context = True
 username = "python-test-username"
 channel = "python-test"
+language = "en-US"
 
-test = Cognigy_client(base_url, 3100, username, api_key, channel, flow)
+def handle_output_method(result):
+    print 'lalalala'
+    print result
+
+test = Cognigy_client(base_url, 3100, username, api_key, channel, flow, language, handle_output=handle_output_method)
 test.connect()
 print 'Connected'
 test.send_message('Hi', None)

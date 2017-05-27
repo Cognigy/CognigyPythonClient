@@ -1,16 +1,21 @@
 from socketIO_client import SocketIO, LoggingNamespace
 import requests
+import sys
+import json
 
 import logging
 import src.Colorer
-logging.basicConfig(level=logging.INFO)
+FORMATTER = '%(asctime)s - [Python Client - %(funcName)s] - %(levelname)s - %(message)s'
+logging.basicConfig(level=logging.INFO, format=FORMATTER)
 
-class Cognigy_client:
+class CognigyClient(object):
+
+    """Cognigy python client"""
 
     def __init__(self, socket_host, socket_port,
                  user, api_key, channel, flow, language, **kwargs):
 
-        self.logger = logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
 
         self.socket_host = socket_host
         self.socket_port = socket_port
@@ -27,35 +32,40 @@ class Cognigy_client:
         self.options_passthrough_ip = kwargs.get('passthrough_ip', None)
 
         # reset state, context, flow
-        self.reset_flow = kwargs.get('reset_flow', None)
-        if self.reset_flow is None and not isinstance(self.reset_flow, bool):
-            self.reset_flow = False
-        
-        self.reset_state = kwargs.get('reset_state', None)
-        if self.reset_state is None and not isinstance(self.reset_state, bool):
-            self.reset_state = False
+        self.options_reset_flow = kwargs.get('reset_flow', False)
+        if self.options_reset_flow is None and not isinstance(self.options_reset_flow, bool):
+            self.options_reset_flow = False
 
-        self.reset_context = kwargs.get('reset_context', None)
-        if self.reset_context is None and not isinstance(self.reset_context, bool):
-            self.reset_context = False
+        self.options_reset_state = kwargs.get('reset_state', False)
+        if self.options_reset_state is None and not isinstance(self.options_reset_state, bool):
+            self.options_reset_state = False
 
-        self.options_keep_markup = kwargs.get('keep_markup', None)
+        self.options_reset_context = kwargs.get('reset_context', False)
+        if self.options_reset_context is None and not isinstance(self.options_reset_context, bool):
+            self.options_reset_context = False
+
+        # set optional values
+        self.options_keep_markup = kwargs.get('keep_markup', False)
         if self.options_keep_markup is None and not isinstance(self.options_keep_markup, bool):
             self.options_keep_markup = False
-        
+
         self.handle_output = kwargs.get('handle_output', None)
 
     def on_connect(self):
+        """Do on connected"""
         self.logger.info('Connected!')
 
     def on_disconnect(self):
+        """Do on disconnected"""
         self.logger.info('Disconnected!')
 
     def on_error(self, *args):
+        """On receiving error from Cognigy brain"""
         for arg in args:
             self.logger.error(arg)
 
     def on_output(self, *args):
+        """Process output from Cognigy brain"""
         self.logger.debug('Output detected: {0}'.format(args[0]))
         result = args[0]
         if self.options_keep_markup:
@@ -64,37 +74,81 @@ class Cognigy_client:
             self.handle_output(result)
 
     def connect(self):
-        self.token = self.__get_token()
+        """Connect to Cognigy brain"""
+        try:
+            self.token = self.__get_token()
 
-        self.socket_io = SocketIO(self.socket_host, self.socket_port, params={'token': self.token})
+            self.socket_io = SocketIO(self.socket_host, self.socket_port, params={'token': self.token})
 
-        # init first before start sending message
-        self.logger.info('Initializing connection')
-        self.socket_io.emit("init", {
-					       "flowId": self.options_flow,
-					       "language": self.options_language,
-					       "version": self.option_version,
-            "passthroughIP": self.options_passthrough_ip,
-            "resetFlow": self.reset_flow,
-            "resetState": self.reset_state,
-            "resetContext": self.reset_context
-        })
+            # init first before start sending message
+            self.logger.info('Initializing connection')
+            self.socket_io.emit("init", {
+                "flowId": self.options_flow,
+                "language": self.options_language,
+                "version": self.option_version,
+                "passthroughIP": self.options_passthrough_ip,
+                "resetFlow": self.reset_flow,
+                "resetState": self.options_reset_state,
+                "resetContext": self.options_reset_context
+            })
 
-        self.socket_io.on('output', self.on_output)
-        self.socket_io.on('connect', self.on_connect)
-        self.socket_io.on('error', self.on_error)
-        self.socket_io.on('exception', self.on_error)
-        self.socket_io.on('disconnect', self.on_disconnect)
-        
-        self.logger.debug('Events setup finished')
-        self.socket_io.wait(10)
+            self.socket_io.on('output', self.on_output)
+            self.socket_io.on('connect', self.on_connect)
+            self.socket_io.on('error', self.on_error)
+            self.socket_io.on('exception', self.on_error)
+            self.socket_io.on('disconnect', self.on_disconnect)
+
+            self.logger.debug('Events setup finished')
+            self.socket_io.wait(10)
+
+        except:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error("Error on initiating socket connection, please check if you're using the right API key")
 
     def send_message(self, message, data):
+        """Send message to brain"""
         self.logger.info('Sending message: ' + message)
         self.socket_io.emit('input', {"text": message, "data": data})
         self.socket_io.wait(10)
 
+    def reset_flow(self, new_flow_id, language, version):
+        """Change to another flow"""
+        self.socket_io.emit('resetFlow', {
+            "id": new_flow_id,
+            "language": language,
+            "version": version})
+        self.socket_io.wait(10)
+
+    def reset_state(self):
+        """Reset current flow state"""
+        self.socket_io.emit('resetState')
+        self.socket_io.wait(10)
+
+    def inject_state(self, state):
+        """Send an inject state event"""
+        if not isinstance(state, str):
+            self.logger.error('State is not a string, please use only string as state')
+
+        self.socket_io.emit('injectState', state)
+        self.socket_io.wait(10)
+
+    def inject_context(self, context):
+        """Send an inject state event"""
+        try:
+            json_context = json.loads(context)
+            self.socket_io.emit('injectContext', json_context)
+            self.socket_io.wait(10)
+
+        except ValueError:
+            self.logger.error('Context object is not JSON, please only use JSON object')
+
+    def set_event_handler(self, event, handler):
+        """Manual socket io event handling"""
+        self.socket_io.on(event, handler)
+        self.socket_io.wait(10)
+
     def __get_token(self):
+        """Private function to get token for connecting"""
         url = '{0}:{1}/loginDevice'.format(self.socket_host, self.socket_port)
         headers = {
             'Content-Type': 'application/json',

@@ -2,7 +2,6 @@ from socketIO_client import SocketIO, LoggingNamespace
 import requests
 
 import logging
-import Colorer
 logging.basicConfig(level=logging.INFO)
 
 class Cognigy_client:

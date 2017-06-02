@@ -4,7 +4,6 @@ import sys
 import json
 
 import logging
-import src.Colorer
 FORMATTER = '%(asctime)s - [Python Client - %(funcName)s] - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMATTER)
 
@@ -51,6 +50,15 @@ class CognigyClient(object):
 
         self.handle_output = kwargs.get('handle_output', None)
 
+    def is_connected(self):
+        """Check if socket io client is connected"""
+        if self.socket_io is not None:
+            return True
+        else:
+            self.logger.error(sys.exc_info()[0])
+            self.logger.error('Socket io client is not connected')
+            return False
+
     def on_connect(self):
         """Do on connected"""
         self.logger.info('Connected!')
@@ -77,20 +85,22 @@ class CognigyClient(object):
         """Connect to Cognigy brain"""
         try:
             self.token = self.__get_token()
-
             self.socket_io = SocketIO(self.socket_host, self.socket_port, params={'token': self.token})
 
             # init first before start sending message
             self.logger.info('Initializing connection')
-            self.socket_io.emit("init", {
+            config = {
                 "flowId": self.options_flow,
                 "language": self.options_language,
                 "version": self.option_version,
                 "passthroughIP": self.options_passthrough_ip,
-                "resetFlow": self.reset_flow,
+                "resetFlow": self.options_reset_flow,
                 "resetState": self.options_reset_state,
                 "resetContext": self.options_reset_context
-            })
+            }
+
+            self.logger.info("INIT COGNIGY CLIENT")
+            self.socket_io.emit("init", config)
 
             self.socket_io.on('output', self.on_output)
             self.socket_io.on('connect', self.on_connect)
@@ -101,43 +111,48 @@ class CognigyClient(object):
             self.logger.debug('Events setup finished')
             self.socket_io.wait(10)
 
-        except:
+        except Exception as ex:
             self.logger.error(sys.exc_info()[0])
             self.logger.error("Error on initiating socket connection, please check if you're using the right API key")
 
     def send_message(self, message, data):
         """Send message to brain"""
         self.logger.info('Sending message: ' + message)
-        self.socket_io.emit('input', {"text": message, "data": data})
-        self.socket_io.wait(10)
+        if self.is_connected():
+            self.socket_io.emit('input', {"text": message, "data": data})
+            self.socket_io.wait(10)
 
     def reset_flow(self, new_flow_id, language, version):
         """Change to another flow"""
-        self.socket_io.emit('resetFlow', {
-            "id": new_flow_id,
-            "language": language,
-            "version": version})
-        self.socket_io.wait(10)
+        if self.is_connected():
+            self.socket_io.emit('resetFlow', {
+                "id": new_flow_id,
+                "language": language,
+                "version": version})
+            self.socket_io.wait(10)
 
     def reset_state(self):
         """Reset current flow state"""
-        self.socket_io.emit('resetState')
-        self.socket_io.wait(10)
+        if self.is_connected():
+            self.socket_io.emit('resetState')
+            self.socket_io.wait(10)
 
     def inject_state(self, state):
         """Send an inject state event"""
         if not isinstance(state, str):
             self.logger.error('State is not a string, please use only string as state')
 
-        self.socket_io.emit('injectState', state)
-        self.socket_io.wait(10)
+        if self.is_connected():
+            self.socket_io.emit('injectState', state)
+            self.socket_io.wait(10)
 
     def inject_context(self, context):
         """Send an inject state event"""
         try:
             json_context = json.loads(context)
-            self.socket_io.emit('injectContext', json_context)
-            self.socket_io.wait(10)
+            if self.is_connected():
+                self.socket_io.emit('injectContext', json_context)
+                self.socket_io.wait(10)
 
         except ValueError:
             self.logger.error('Context object is not JSON, please only use JSON object')
@@ -149,6 +164,7 @@ class CognigyClient(object):
 
     def __get_token(self):
         """Private function to get token for connecting"""
+        self.logger.info('Getting token for init')
         url = '{0}:{1}/loginDevice'.format(self.socket_host, self.socket_port)
         headers = {
             'Content-Type': 'application/json',
@@ -162,7 +178,7 @@ class CognigyClient(object):
         }
 
         token_response = requests.post(url, json=json_data, headers=headers).json()
-        self.logger.debug('TOKEN RESPONSE :' + token_response['token'])
+        self.logger.info('TOKEN RESPONSE :' + token_response['token'])
 
         if token_response is None:
             self.logger.error('No token detected')
